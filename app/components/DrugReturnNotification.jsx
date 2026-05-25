@@ -2,209 +2,793 @@
 import { useState } from "react";
 
 const mockData = [
-  { id: 1, hn: "HN 0012345", patientName: "นายสมชาย ใจดี", initials: "สม", ward: "Ward ศัลยกรรม 3", room: "ห้อง 302", bed: "เตียง A", drug: "Amoxicillin 500 mg capsule", qty: "12 แคปซูล", lot: "AMX-2025-04", expire: "12/2026", nurse: "พย. สมหญิง วงษ์ดี", time: "09:35", status: "pending", isNew: true },
-  { id: 2, hn: "HN 0098712", patientName: "นางวิภา รักสุขภาพ", initials: "วิ", ward: "Ward อายุรกรรม 1", room: "ห้อง 115", bed: "เตียง B", drug: "Metformin 500 mg tablet", qty: "30 เม็ด", lot: "MFM-2024-11", expire: "06/2026", nurse: "พย. วิภา รักงาน", time: "08:50", status: "checking", isNew: false },
-  { id: 3, hn: "HN 0054321", patientName: "ด.ช.ปิยะ มีสุข", initials: "ปิ", ward: "Ward กุมารเวช", room: "ห้อง 210", bed: "เตียง C", drug: "Paracetamol syrup 250 mg/5 mL", qty: "2 ขวด (120 mL)", lot: "-", expire: "-", nurse: "พย. ปิยะ สุขใจ", time: "08:10", status: "received", isNew: false },
-  { id: 4, hn: "HN 0031188", patientName: "นางสาวรัตนา พงษ์ดี", initials: "รต", ward: "Ward สูติกรรม", room: "ห้อง 408", bed: "เตียง D", drug: "Folic acid 5 mg tablet", qty: "60 เม็ด", lot: "FOL-2025-02", expire: "03/2027", nurse: "พย. รัตนา ดูแลดี", time: "07:55", status: "pending", isNew: true },
+  {
+    id: 1,
+    ward: "ICU",
+    hn: "65001234",
+    patientName: "นายสมชาย ใจดี",
+    room: "ICU-01",
+
+    returnDrug: true,
+    returnType: "ทางกระสวย",
+
+    doctorOrder: false,
+
+    homeMedication: false,
+
+    createdAt: "25/05/2026 09:35",
+    updatedAt: "-",
+    updatedBy: "-",
+  },
 ];
 
-const statusConfig = {
-  pending:  { label: "รอตรวจรับ", bg: "#FEF3C7", color: "#92400E", border: "#FCD34D" },
-  checking: { label: "กำลังตรวจ", bg: "#FFEDD5", color: "#9A3412", border: "#FDBA74" },
-  received: { label: "รับแล้ว",   bg: "#DCFCE7", color: "#166534", border: "#86EFAC" },
-};
-
-const avatarColors = [
-  { bg: "#EFF6FF", color: "#1D4ED8" },
-  { bg: "#FEF9C3", color: "#854D0E" },
-  { bg: "#F0FDF4", color: "#166534" },
-  { bg: "#FDF4FF", color: "#7E22CE" },
-];
-
-export default function DrugReturnNotification({ user, onLogout }) {
-  const [filter, setFilter] = useState("all");
+export default function DrugReturnNotification({
+  user,
+}) {
   const [selected, setSelected] = useState(null);
+
+  const [showForm, setShowForm] =
+    useState(false);
+
+  const [editingId, setEditingId] =
+    useState(null);
+
   const [data, setData] = useState(mockData);
 
-  const isPharmacist = user?.role === "pharmacist";
-  const visibleData = isPharmacist ? data : data.filter((d) => d.ward === user?.ward);
+  const [form, setForm] = useState({
+    hn: "",
+    patientName: "",
+    room: "",
 
-  const filters = [
-    { key: "all", label: "ทั้งหมด" },
-    { key: "pending", label: "รอตรวจรับ" },
-    { key: "checking", label: "กำลังตรวจ" },
-    { key: "received", label: "รับแล้ว" },
-  ];
+    returnDrug: false,
+    returnType: "ทางกระสวย",
 
-  const filtered = filter === "all" ? visibleData : visibleData.filter((d) => d.status === filter);
-  const counts = {
-    new:      visibleData.filter((d) => d.isNew).length,
-    pending:  visibleData.filter((d) => d.status === "pending").length,
-    received: visibleData.filter((d) => d.status === "received").length,
-    all:      visibleData.length,
-  };
+    doctorOrder: false,
+  });
 
-  function handleConfirm(id) {
-    setData((prev) => prev.map((d) => d.id === id ? { ...d, status: "received", isNew: false } : d));
-    setSelected(null);
-  }
-  function handleChecking(id) {
-    setData((prev) => prev.map((d) => d.id === id ? { ...d, status: "checking", isNew: false } : d));
-    setSelected(null);
+  const visibleData =
+    user?.role === "pharmacist"
+      ? data
+      : data.filter(
+          (item) => item.ward === user?.ward
+        );
+
+  function getCurrentTime() {
+    return new Date().toLocaleString("th-TH");
   }
 
-  const card = selected ? data.find((d) => d.id === selected) : null;
+  // SAVE
+  function handleSave() {
+    // EDIT
+    if (editingId) {
+      setData((prev) =>
+        prev.map((item) =>
+          item.id === editingId
+            ? {
+                ...item,
+                ...form,
+                updatedAt:
+                  getCurrentTime(),
+                updatedBy:
+                  user?.name,
+              }
+            : item
+        )
+      );
+
+      resetForm();
+      return;
+    }
+
+    // CHECK DUPLICATE
+    const exists = data.find(
+      (d) => d.hn === form.hn
+    );
+
+    if (exists) {
+      alert("HN นี้มีอยู่แล้ว");
+      return;
+    }
+
+    // ADD NEW
+    const newItem = {
+      id: Date.now(),
+      ward: user?.ward,
+
+      hn: form.hn,
+      patientName: form.patientName,
+      room: form.room,
+
+      returnDrug: form.returnDrug,
+      returnType: form.returnType,
+
+      doctorOrder: form.doctorOrder,
+
+      homeMedication: false,
+
+      createdAt: getCurrentTime(),
+      updatedAt: "-",
+      updatedBy: "-",
+    };
+
+    setData([newItem, ...data]);
+
+    resetForm();
+  }
+
+  function resetForm() {
+    setForm({
+      hn: "",
+      patientName: "",
+      room: "",
+
+      returnDrug: false,
+      returnType: "ทางกระสวย",
+
+      doctorOrder: false,
+    });
+
+    setEditingId(null);
+    setShowForm(false);
+  }
+
+  // EDIT
+  function handleEdit(item) {
+    setEditingId(item.id);
+
+    setForm({
+      hn: item.hn,
+      patientName: item.patientName,
+      room: item.room,
+
+      returnDrug: item.returnDrug,
+      returnType: item.returnType,
+
+      doctorOrder: item.doctorOrder,
+    });
+
+    setShowForm(true);
+  }
+
+  // PHARM UPDATE
+  function updateTask(key) {
+    if (user?.role !== "pharmacist")
+      return;
+
+    setData((prev) =>
+      prev.map((item) =>
+        item.id === selected.id
+          ? {
+              ...item,
+              [key]: !item[key],
+              updatedAt:
+                getCurrentTime(),
+              updatedBy:
+                user?.name,
+            }
+          : item
+      )
+    );
+
+    setSelected((prev) => ({
+      ...prev,
+      [key]: !prev[key],
+      updatedAt: getCurrentTime(),
+      updatedBy: user?.name,
+    }));
+  }
 
   return (
-    <div style={{ fontFamily: "'Sarabun', sans-serif", minHeight: "100vh", background: "#F0F4F8" }}>
-      <link href="https://fonts.googleapis.com/css2?family=Sarabun:wght@400;500;600&display=swap" rel="stylesheet" />
+    <div
+      style={{
+        fontFamily:
+          "'Sarabun', sans-serif",
+        minHeight: "100vh",
+        background:
+          "linear-gradient(to bottom right,#ECFDF5,#F0FDF4,#DCFCE7)",
+      }}
+    >
+      <link
+        href="https://fonts.googleapis.com/css2?family=Sarabun:wght@400;500;600;700&display=swap"
+        rel="stylesheet"
+      />
 
-      <div style={{ background: "#0F3460", padding: "0 24px", position: "sticky", top: 0, zIndex: 10 }}>
-        <div style={{ maxWidth: 960, margin: "0 auto", padding: "14px 0", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-          <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-            <div style={{ width: 32, height: 32, borderRadius: 8, background: "#E94560", display: "flex", alignItems: "center", justifyContent: "center" }}>
-              <svg width="18" height="18" fill="none" viewBox="0 0 24 24" stroke="white" strokeWidth={2}>
-                <path strokeLinecap="round" strokeLinejoin="round" d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10" />
-              </svg>
+      {/* HEADER */}
+      <div
+        style={{
+          background:
+            "linear-gradient(90deg,#065F46,#16A34A)",
+          padding: "18px 24px",
+        }}
+      >
+        <div
+          style={{
+            maxWidth: 1000,
+            margin: "0 auto",
+            display: "flex",
+            justifyContent:
+              "space-between",
+            alignItems: "center",
+          }}
+        >
+          <div>
+            <div
+              style={{
+                color: "#fff",
+                fontWeight: 700,
+                fontSize: 24,
+              }}
+            >
+              Nakornthon Pharmacy
             </div>
-            <span style={{ color: "#fff", fontWeight: 600, fontSize: 16 }}>PharmAlert</span>
-            <span style={{ fontSize: 11, fontWeight: 600, padding: "2px 8px", borderRadius: 20, background: isPharmacist ? "#E94560" : "#7C3AED", color: "#fff" }}>
-              {isPharmacist ? "เภสัชกร" : "พยาบาล Ward"}
-            </span>
+
+            <div
+              style={{
+                color: "#DCFCE7",
+                fontSize: 13,
+              }}
+            >
+              Return Workflow Dashboard
+            </div>
           </div>
-          <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-            <span style={{ color: "#CBD5E1", fontSize: 13 }}>{user?.name}</span>
-            <button onClick={onLogout} style={{ background: "rgba(255,255,255,0.1)", border: "1px solid rgba(255,255,255,0.2)", color: "#CBD5E1", borderRadius: 8, padding: "5px 12px", fontSize: 12, cursor: "pointer", fontFamily: "'Sarabun', sans-serif" }}>
-              ออกจากระบบ
-            </button>
+
+          <div
+            style={{
+              background:
+                "rgba(255,255,255,0.15)",
+              color: "#fff",
+              padding: "10px 16px",
+              borderRadius: 14,
+            }}
+          >
+            {user?.role === "pharmacist"
+              ? "Pharmacist"
+              : user?.ward}
           </div>
         </div>
       </div>
 
-      <div style={{ maxWidth: 960, margin: "0 auto", padding: "20px 24px" }}>
-        {!isPharmacist && (
-          <div style={{ marginBottom: 16, padding: "10px 14px", background: "#F5F3FF", borderRadius: 10, border: "1px solid #DDD6FE" }}>
-            <span style={{ fontSize: 13, color: "#6D28D9", fontWeight: 500 }}>แสดงเฉพาะรายการของ {user?.ward}</span>
+      {/* CONTENT */}
+      <div
+        style={{
+          maxWidth: 1000,
+          margin: "0 auto",
+          padding: 24,
+        }}
+      >
+        {/* ADD BUTTON */}
+        {user?.role === "nurse" && (
+          <div
+            style={{
+              display: "flex",
+              justifyContent:
+                "flex-end",
+              marginBottom: 20,
+            }}
+          >
+            <button
+              onClick={() =>
+                setShowForm(true)
+              }
+              style={{
+                padding: "14px 20px",
+                border: "none",
+                borderRadius: 18,
+                background:
+                  "linear-gradient(90deg,#15803D,#22C55E)",
+                color: "#fff",
+                fontWeight: 700,
+                cursor: "pointer",
+              }}
+            >
+              + เพิ่มรายการ
+            </button>
           </div>
         )}
 
-        <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 12, marginBottom: 20 }}>
-          {[
-            { label: "รายการใหม่",   value: counts.new,      color: "#3B82F6" },
-            { label: "รอตรวจรับ",    value: counts.pending,  color: "#D97706" },
-            { label: "รับแล้ววันนี้", value: counts.received, color: "#16A34A" },
-            { label: "ทั้งหมดวันนี้", value: counts.all,      color: "#475569" },
-          ].map((s) => (
-            <div key={s.label} style={{ background: "#fff", borderRadius: 12, padding: "14px 16px", border: "1px solid #E2E8F0" }}>
-              <div style={{ fontSize: 26, fontWeight: 600, color: s.color, lineHeight: 1.2 }}>{s.value}</div>
-              <div style={{ fontSize: 12, color: "#64748B", marginTop: 3 }}>{s.label}</div>
-            </div>
-          ))}
-        </div>
+        {/* LIST */}
+        <div
+          style={{
+            display: "flex",
+            flexDirection: "column",
+            gap: 16,
+          }}
+        >
+          {visibleData.map((item) => (
+            <div
+              key={item.id}
+              style={{
+                background: "#fff",
+                borderRadius: 24,
+                padding: 22,
+                boxShadow:
+                  "0 10px 30px rgba(0,0,0,0.06)",
+              }}
+            >
+              <div
+                style={{
+                  display: "flex",
+                  justifyContent:
+                    "space-between",
+                  flexWrap: "wrap",
+                  gap: 20,
+                }}
+              >
+                <div
+                  onClick={() =>
+                    setSelected(item)
+                  }
+                  style={{
+                    flex: 1,
+                    cursor: "pointer",
+                  }}
+                >
+                  <div
+                    style={{
+                      fontSize: 19,
+                      fontWeight: 700,
+                    }}
+                  >
+                    {item.patientName}
+                  </div>
 
-        <div style={{ display: "flex", gap: 6, marginBottom: 16, background: "#fff", padding: "6px", borderRadius: 10, border: "1px solid #E2E8F0", width: "fit-content" }}>
-          {filters.map((f) => (
-            <button key={f.key} onClick={() => setFilter(f.key)} style={{ padding: "6px 16px", borderRadius: 7, fontSize: 13, fontWeight: 500, border: "none", cursor: "pointer", background: filter === f.key ? "#0F3460" : "transparent", color: filter === f.key ? "#fff" : "#64748B", fontFamily: "'Sarabun', sans-serif" }}>
-              {f.label}
-              {f.key !== "all" && (
-                <span style={{ marginLeft: 6, fontSize: 11, background: filter === f.key ? "rgba(255,255,255,0.2)" : "#F1F5F9", color: filter === f.key ? "#fff" : "#94A3B8", padding: "1px 6px", borderRadius: 10 }}>
-                  {visibleData.filter((d) => d.status === f.key).length}
-                </span>
-              )}
-            </button>
-          ))}
-        </div>
+                  <div
+                    style={{
+                      marginTop: 5,
+                      color: "#64748B",
+                    }}
+                  >
+                    HN : {item.hn}
+                  </div>
 
-        <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
-          {filtered.length === 0 && (
-            <div style={{ textAlign: "center", padding: "40px 0", color: "#94A3B8", fontSize: 14 }}>ไม่มีรายการ</div>
-          )}
-          {filtered.map((item, i) => {
-            const av = avatarColors[i % avatarColors.length];
-            const st = statusConfig[item.status];
-            return (
-              <div key={item.id} onClick={() => setSelected(item.id)} style={{ background: "#fff", borderRadius: 12, border: `1px solid ${item.isNew ? "#BFDBFE" : "#E2E8F0"}`, padding: "14px 18px", cursor: "pointer", borderLeft: item.isNew ? "4px solid #3B82F6" : item.status === "checking" ? "4px solid #F59E0B" : "4px solid #E2E8F0" }}>
-                <div style={{ display: "flex", gap: 14, alignItems: "flex-start" }}>
-                  <div style={{ width: 42, height: 42, borderRadius: "50%", background: av.bg, color: av.color, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 13, fontWeight: 600, flexShrink: 0 }}>{item.initials}</div>
-                  <div style={{ flex: 1, minWidth: 0 }}>
-                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 5 }}>
-                      <div>
-                        <span style={{ fontWeight: 600, fontSize: 14, color: "#0F172A" }}>{item.patientName}</span>
-                        <span style={{ marginLeft: 8, fontSize: 12, color: "#94A3B8" }}>{item.hn}</span>
-                      </div>
-                      <span style={{ fontSize: 12, color: "#94A3B8", flexShrink: 0 }}>{item.time} น.</span>
-                    </div>
-                    <div style={{ display: "flex", gap: 6, marginBottom: 8, flexWrap: "wrap" }}>
-                      <span style={{ fontSize: 11, fontWeight: 500, padding: "2px 9px", borderRadius: 20, background: "#EFF6FF", color: "#1D4ED8", border: "1px solid #BFDBFE" }}>{item.ward}</span>
-                      <span style={{ fontSize: 11, fontWeight: 500, padding: "2px 9px", borderRadius: 20, background: "#F5F3FF", color: "#6D28D9", border: "1px solid #DDD6FE" }}>{item.room} · {item.bed}</span>
-                    </div>
-                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-end" }}>
-                      <div>
-                        <div style={{ fontSize: 13, fontWeight: 500, color: "#334155" }}>{item.drug}</div>
-                        <div style={{ fontSize: 12, color: "#94A3B8", marginTop: 2 }}>{item.qty} · {item.nurse}</div>
-                      </div>
-                      <span style={{ fontSize: 11, fontWeight: 500, padding: "3px 10px", borderRadius: 20, background: st.bg, color: st.color, border: `1px solid ${st.border}`, flexShrink: 0, marginLeft: 8 }}>{st.label}</span>
-                    </div>
+                  <div
+                    style={{
+                      marginTop: 5,
+                      color: "#64748B",
+                    }}
+                  >
+                    {item.ward} · ห้อง{" "}
+                    {item.room}
+                  </div>
+
+                  <div
+                    style={{
+                      marginTop: 12,
+                      display: "flex",
+                      gap: 8,
+                      flexWrap: "wrap",
+                    }}
+                  >
+                    <Badge
+                      active={
+                        item.returnDrug
+                      }
+                      text={
+                        item.returnDrug
+                          ? `Return (${item.returnType})`
+                          : "Return"
+                      }
+                    />
+
+                    <Badge
+                      active={
+                        item.doctorOrder
+                      }
+                      text="Doctor Order"
+                    />
+
+                    {user?.role ===
+                      "pharmacist" && (
+                      <Badge
+                        active={
+                          item.homeMedication
+                        }
+                        text="HomeMedication"
+                      />
+                    )}
+                  </div>
+
+                  <div
+                    style={{
+                      marginTop: 10,
+                      fontSize: 12,
+                      color: "#94A3B8",
+                    }}
+                  >
+                    Updated :
+                    {" " + item.updatedAt}
                   </div>
                 </div>
+
+                {/* EDIT BUTTON */}
+                {user?.role === "nurse" && (
+                  <button
+                    onClick={() =>
+                      handleEdit(item)
+                    }
+                    style={{
+                      height: 44,
+                      padding:
+                        "0 18px",
+                      border: "none",
+                      borderRadius: 14,
+                      background:
+                        "#E0F2FE",
+                      color: "#0369A1",
+                      fontWeight: 700,
+                      cursor: "pointer",
+                    }}
+                  >
+                    แก้ไข
+                  </button>
+                )}
               </div>
-            );
-          })}
+            </div>
+          ))}
         </div>
       </div>
 
-      {card && (
-        <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.4)", zIndex: 50, display: "flex", alignItems: "center", justifyContent: "center", padding: 24 }} onClick={() => setSelected(null)}>
-          <div style={{ background: "#fff", borderRadius: 16, width: "100%", maxWidth: 480, overflow: "hidden" }} onClick={(e) => e.stopPropagation()}>
-            <div style={{ background: "#0F3460", padding: "16px 20px", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-              <span style={{ color: "#fff", fontWeight: 600, fontSize: 15 }}>รายละเอียดยาส่งคืน</span>
-              <button onClick={() => setSelected(null)} style={{ background: "rgba(255,255,255,0.15)", border: "none", color: "#fff", borderRadius: 6, padding: "4px 10px", cursor: "pointer", fontSize: 13, fontFamily: "'Sarabun', sans-serif" }}>ปิด</button>
+      {/* DETAIL */}
+      {selected && (
+        <div
+          onClick={() =>
+            setSelected(null)
+          }
+          style={{
+            position: "fixed",
+            inset: 0,
+            background:
+              "rgba(0,0,0,0.45)",
+            display: "flex",
+            justifyContent: "center",
+            alignItems: "center",
+            padding: 20,
+          }}
+        >
+          <div
+            onClick={(e) =>
+              e.stopPropagation()
+            }
+            style={{
+              background: "#fff",
+              width: "100%",
+              maxWidth: 500,
+              borderRadius: 28,
+              padding: 28,
+            }}
+          >
+            <div
+              style={{
+                fontSize: 24,
+                fontWeight: 700,
+                color: "#15803D",
+                marginBottom: 20,
+              }}
+            >
+              รายละเอียดรายการ
             </div>
-            <div style={{ padding: "18px 20px" }}>
-              <div style={{ display: "flex", gap: 12, alignItems: "center", marginBottom: 16 }}>
-                <div style={{ width: 48, height: 48, borderRadius: "50%", background: "#EFF6FF", color: "#1D4ED8", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 15, fontWeight: 600 }}>{card.initials}</div>
-                <div>
-                  <div style={{ fontWeight: 600, fontSize: 15, color: "#0F172A" }}>{card.patientName}</div>
-                  <div style={{ fontSize: 13, color: "#64748B" }}>{card.hn}</div>
-                </div>
-              </div>
-              <div style={{ background: "#F8FAFC", borderRadius: 10, padding: "12px 14px", marginBottom: 14 }}>
-                <div style={{ fontSize: 11, color: "#94A3B8", marginBottom: 8 }}>ที่อยู่</div>
-                <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-                  <span style={{ fontSize: 12, padding: "3px 10px", borderRadius: 20, background: "#EFF6FF", color: "#1D4ED8", border: "1px solid #BFDBFE" }}>{card.ward}</span>
-                  <span style={{ fontSize: 12, padding: "3px 10px", borderRadius: 20, background: "#F5F3FF", color: "#6D28D9", border: "1px solid #DDD6FE" }}>{card.room} · {card.bed}</span>
-                </div>
-              </div>
-              <div style={{ background: "#F8FAFC", borderRadius: 10, padding: "12px 14px", marginBottom: 16 }}>
-                <div style={{ fontSize: 11, color: "#94A3B8", marginBottom: 8 }}>ข้อมูลยา</div>
-                <div style={{ fontWeight: 600, fontSize: 14, color: "#0F172A", marginBottom: 10 }}>{card.drug}</div>
-                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
-                  {[{ label: "จำนวน", value: card.qty }, { label: "Lot number", value: card.lot }, { label: "วันหมดอายุ", value: card.expire }, { label: "ผู้ส่ง", value: card.nurse }, { label: "เวลาแจ้ง", value: card.time + " น." }].map((r) => (
-                    <div key={r.label}>
-                      <div style={{ fontSize: 11, color: "#94A3B8" }}>{r.label}</div>
-                      <div style={{ fontSize: 13, color: "#334155", fontWeight: 500 }}>{r.value}</div>
-                    </div>
-                  ))}
-                </div>
-              </div>
-              {isPharmacist && card.status !== "received" && (
-                <div style={{ display: "flex", gap: 10 }}>
-                  {card.status === "pending" && (
-                    <button onClick={() => handleChecking(card.id)} style={{ flex: 1, padding: "10px", borderRadius: 10, border: "1px solid #E2E8F0", background: "#fff", color: "#64748B", fontSize: 14, fontWeight: 500, cursor: "pointer", fontFamily: "'Sarabun', sans-serif" }}>เริ่มตรวจรับ</button>
-                  )}
-                  <button onClick={() => handleConfirm(card.id)} style={{ flex: 2, padding: "10px", borderRadius: 10, border: "none", background: "#0F3460", color: "#fff", fontSize: 14, fontWeight: 600, cursor: "pointer", fontFamily: "'Sarabun', sans-serif" }}>ยืนยันรับยา</button>
-                </div>
-              )}
-              {!isPharmacist && card.status !== "received" && (
-                <div style={{ textAlign: "center", padding: "10px", background: "#FEF9C3", borderRadius: 10, color: "#854D0E", fontSize: 13 }}>รอเภสัชกรตรวจรับ</div>
-              )}
-              {card.status === "received" && (
-                <div style={{ textAlign: "center", padding: "10px", background: "#F0FDF4", borderRadius: 10, color: "#166534", fontSize: 14, fontWeight: 500 }}>✓ รับยาเรียบร้อยแล้ว</div>
-              )}
+
+            <div
+              style={{
+                marginBottom: 10,
+              }}
+            >
+              <b>HN :</b>{" "}
+              {selected.hn}
             </div>
+
+            <div
+              style={{
+                marginBottom: 10,
+              }}
+            >
+              <b>ชื่อ :</b>{" "}
+              {selected.patientName}
+            </div>
+
+            <div
+              style={{
+                marginBottom: 20,
+              }}
+            >
+              <b>ห้อง :</b>{" "}
+              {selected.room}
+            </div>
+
+            {/* PHARM ONLY */}
+            {user?.role ===
+              "pharmacist" && (
+              <div
+                style={{
+                  display: "grid",
+                  gap: 10,
+                  marginBottom: 24,
+                }}
+              >
+                <TaskButton
+                  active={
+                    selected.returnDrug
+                  }
+                  text={`Return IPD (${selected.returnType})`}
+                  onClick={() =>
+                    updateTask(
+                      "returnDrug"
+                    )
+                  }
+                />
+
+                <TaskButton
+                  active={
+                    selected.doctorOrder
+                  }
+                  text="Doctor Order Complete"
+                  onClick={() =>
+                    updateTask(
+                      "doctorOrder"
+                    )
+                  }
+                />
+
+                <TaskButton
+                  active={
+                    selected.homeMedication
+                  }
+                  text="Homemedication Complete"
+                  onClick={() =>
+                    updateTask(
+                      "homeMedication"
+                    )
+                  }
+                />
+              </div>
+            )}
+
+            <button
+              onClick={() =>
+                setSelected(null)
+              }
+              style={{
+                width: "100%",
+                padding: 14,
+                border: "none",
+                borderRadius: 18,
+                background:
+                  "linear-gradient(90deg,#15803D,#22C55E)",
+                color: "#fff",
+                fontWeight: 700,
+              }}
+            >
+              ปิดหน้าต่าง
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* FORM */}
+      {showForm && (
+        <div
+          onClick={resetForm}
+          style={{
+            position: "fixed",
+            inset: 0,
+            background:
+              "rgba(0,0,0,0.45)",
+            display: "flex",
+            justifyContent: "center",
+            alignItems: "center",
+            padding: 20,
+          }}
+        >
+          <div
+            onClick={(e) =>
+              e.stopPropagation()
+            }
+            style={{
+              background: "#fff",
+              width: "100%",
+              maxWidth: 500,
+              borderRadius: 28,
+              padding: 28,
+            }}
+          >
+            <div
+              style={{
+                fontSize: 24,
+                fontWeight: 700,
+                color: "#15803D",
+                marginBottom: 24,
+              }}
+            >
+              {editingId
+                ? "แก้ไขรายการ"
+                : "เพิ่มรายการใหม่"}
+            </div>
+
+            <input
+              placeholder="HN"
+              value={form.hn}
+              onChange={(e) =>
+                setForm({
+                  ...form,
+                  hn: e.target.value,
+                })
+              }
+              style={inputStyle}
+            />
+
+            <input
+              placeholder="ชื่อ - นามสกุล"
+              value={form.patientName}
+              onChange={(e) =>
+                setForm({
+                  ...form,
+                  patientName:
+                    e.target.value,
+                })
+              }
+              style={inputStyle}
+            />
+
+            <input
+              placeholder="ห้อง"
+              value={form.room}
+              onChange={(e) =>
+                setForm({
+                  ...form,
+                  room: e.target.value,
+                })
+              }
+              style={inputStyle}
+            />
+
+            {/* RETURN */}
+            <label
+              style={labelStyle}
+            >
+              <input
+                type="checkbox"
+                checked={
+                  form.returnDrug
+                }
+                onChange={(e) =>
+                  setForm({
+                    ...form,
+                    returnDrug:
+                      e.target.checked,
+                  })
+                }
+              />
+              Return IPD Drug
+            </label>
+
+            {form.returnDrug && (
+              <select
+                value={form.returnType}
+                onChange={(e) =>
+                  setForm({
+                    ...form,
+                    returnType:
+                      e.target.value,
+                  })
+                }
+                style={inputStyle}
+              >
+                <option>
+                  ทางกระสวย
+                </option>
+
+                <option>
+                  ลิฟต์
+                </option>
+              </select>
+            )}
+
+            {/* DOCTOR */}
+            <label
+              style={labelStyle}
+            >
+              <input
+                type="checkbox"
+                checked={
+                  form.doctorOrder
+                }
+                onChange={(e) =>
+                  setForm({
+                    ...form,
+                    doctorOrder:
+                      e.target.checked,
+                  })
+                }
+              />
+              Doctor Order Complete
+            </label>
+
+            <button
+              onClick={handleSave}
+              style={{
+                width: "100%",
+                padding: 14,
+                border: "none",
+                borderRadius: 18,
+                background:
+                  "linear-gradient(90deg,#15803D,#22C55E)",
+                color: "#fff",
+                fontWeight: 700,
+              }}
+            >
+              {editingId
+                ? "บันทึกการแก้ไข"
+                : "บันทึกข้อมูล"}
+            </button>
           </div>
         </div>
       )}
     </div>
   );
 }
+
+function Badge({
+  active,
+  text,
+}) {
+  return (
+    <div
+      style={{
+        padding: "6px 12px",
+        borderRadius: 999,
+        fontSize: 12,
+        fontWeight: 700,
+        background: active
+          ? "#DCFCE7"
+          : "#E5E7EB",
+        color: active
+          ? "#15803D"
+          : "#6B7280",
+      }}
+    >
+      {text}
+    </div>
+  );
+}
+
+function TaskButton({
+  active,
+  text,
+  onClick,
+}) {
+  return (
+    <button
+      onClick={onClick}
+      style={{
+        padding: 14,
+        border: "none",
+        borderRadius: 14,
+        background: active
+          ? "#15803D"
+          : "#E5E7EB",
+        color: active
+          ? "#fff"
+          : "#374151",
+        fontWeight: 700,
+        cursor: "pointer",
+      }}
+    >
+      {text}
+    </button>
+  );
+}
+
+const inputStyle = {
+  width: "100%",
+  padding: 14,
+  marginBottom: 16,
+  borderRadius: 14,
+  border: "1px solid #D1D5DB",
+};
+
+const labelStyle = {
+  display: "flex",
+  gap: 10,
+  marginBottom: 14,
+  fontWeight: 600,
+};
