@@ -3,253 +3,237 @@
 import { useState } from "react";
 import DrugReturnNotification from "./components/DrugReturnNotification";
 
-export default function Home() {
-  const [loginData, setLoginData] = useState({
-    username: "",
-    password: "",
-    ward: "ICU",
-  });
+const WARD_LIST = ["ICU", "CCU", "W05", "W6A", "W6B", "W07", "W08", "W09", "W10", "W12", "NSY"];
 
+const CREDENTIALS = [
+  { username: "nurse", password: "1234", role: "nurse" },
+  { username: "pharm", password: "1234", role: "pharmacist" },
+];
+
+export default function Home() {
+  // step: "login" | "ward" | "info"
+  const [step, setStep] = useState("login");
+  const [username, setUsername] = useState("");
+  const [password, setPassword] = useState("");
+  const [loginError, setLoginError] = useState("");
+  const [detectedRole, setDetectedRole] = useState(null);
+  const [selectedWard, setSelectedWard] = useState("");
+  const [inputName, setInputName] = useState("");
+  const [inputEmpId, setInputEmpId] = useState("");
   const [user, setUser] = useState(null);
 
-  function handleLogin(e) {
-    e.preventDefault();
-
-    // PHARMACIST
-    if (
-      loginData.username === "pharm" &&
-      loginData.password === "1234"
-    ) {
-      setUser({
-        name: "Pharmacist",
-        role: "pharmacist",
-      });
-
+  function handleLogin() {
+    const cred = CREDENTIALS.find(
+      (c) => c.username === username.trim() && c.password === password.trim()
+    );
+    if (!cred) {
+      setLoginError("Username หรือ Password ไม่ถูกต้อง");
       return;
     }
-
-    // NURSE
-    if (
-      loginData.username === "nurse" &&
-      loginData.password === "1234"
-    ) {
-      setUser({
-        name: `Nurse ${loginData.ward}`,
-        role: "nurse",
-        ward: loginData.ward,
-      });
-
-      return;
+    setDetectedRole(cred.role);
+    setLoginError("");
+    if (cred.role === "pharmacist") {
+      setStep("info");
+    } else {
+      setStep("ward");
     }
+  }
 
-    alert("Username หรือ Password ไม่ถูกต้อง");
+  function handleWardSelect(ward) {
+    setSelectedWard(ward);
+    setStep("info");
+  }
+
+  function handleInfoSubmit() {
+    if (!inputName.trim() || !inputEmpId.trim()) return;
+    setUser({
+      name: inputName.trim(),
+      displayName: inputName.trim(),
+      displayEmpId: inputEmpId.trim(),
+      role: detectedRole,
+      ward: detectedRole === "nurse" ? selectedWard : null,
+    });
   }
 
   function handleLogout() {
     setUser(null);
+    setStep("login");
+    setUsername(""); setPassword(""); setLoginError("");
+    setDetectedRole(null); setSelectedWard("");
+    setInputName(""); setInputEmpId("");
   }
 
-  if (!user) {
+  const inputStyle = {
+    width: "100%", padding: 14, borderRadius: 14,
+    border: "1px solid #D1D5DB", marginBottom: 14,
+    fontSize: 14, outline: "none", boxSizing: "border-box",
+    fontFamily: "'Sarabun', sans-serif",
+  };
+
+  if (user) {
     return (
-      <div
-        style={{
-          minHeight: "100vh",
-          display: "flex",
-          justifyContent: "center",
-          alignItems: "center",
-          background:
-            "linear-gradient(to bottom right,#ECFDF5,#F0FDF4,#DCFCE7)",
-          fontFamily: "'Sarabun', sans-serif",
-        }}
-      >
-        <link
-          href="https://fonts.googleapis.com/css2?family=Sarabun:wght@400;500;600;700&display=swap"
-          rel="stylesheet"
-        />
-
-        <form
-          onSubmit={handleLogin}
-          style={{
-            background: "#fff",
-            width: 380,
-            padding: 36,
-            borderRadius: 28,
-            boxShadow:
-              "0 20px 50px rgba(0,0,0,0.08)",
-          }}
-        >
-          <div
-            style={{
-              textAlign: "center",
-              marginBottom: 28,
-            }}
-          >
-            <div
-              style={{
-                fontSize: 30,
-                fontWeight: 700,
-                color: "#15803D",
-              }}
-            >
-              Nakornthon
-            </div>
-
-            <div
-              style={{
-                marginTop: 4,
-                color: "#0F172A",
-                fontWeight: 600,
-                fontSize: 18,
-              }}
-            >
-              Pharmacy System
-            </div>
-          </div>
-
-          <input
-            placeholder="Username"
-            value={loginData.username}
-            onChange={(e) =>
-              setLoginData({
-                ...loginData,
-                username: e.target.value,
-              })
-            }
-            style={{
-              width: "100%",
-              padding: 14,
-              borderRadius: 14,
-              border: "1px solid #D1D5DB",
-              marginBottom: 14,
-              fontSize: 14,
-              outline: "none",
-            }}
-          />
-
-          <input
-            type="password"
-            placeholder="Password"
-            value={loginData.password}
-            onChange={(e) =>
-              setLoginData({
-                ...loginData,
-                password: e.target.value,
-              })
-            }
-            style={{
-              width: "100%",
-              padding: 14,
-              borderRadius: 14,
-              border: "1px solid #D1D5DB",
-              marginBottom: 14,
-              fontSize: 14,
-              outline: "none",
-            }}
-          />
-
-          <select
-            value={loginData.ward}
-            onChange={(e) =>
-              setLoginData({
-                ...loginData,
-                ward: e.target.value,
-              })
-            }
-            style={{
-              width: "100%",
-              padding: 14,
-              borderRadius: 14,
-              border: "1px solid #D1D5DB",
-              marginBottom: 20,
-              fontSize: 14,
-              outline: "none",
-            }}
-          >
-            <option>ICU</option>
-            <option>CCU</option>
-            <option>W05</option>
-            <option>W6A</option>
-            <option>W6B</option>
-            <option>NSY</option>
-            <option>W07</option>
-            <option>W08</option>
-            <option>W09</option>
-            <option>W10</option>
-            <option>W12</option>
-          </select>
-
-          <button
-            type="submit"
-            style={{
-              width: "100%",
-              padding: 14,
-              border: "none",
-              borderRadius: 14,
-              background:
-                "linear-gradient(90deg,#15803D,#22C55E)",
-              color: "#fff",
-              fontWeight: 700,
-              fontSize: 15,
-              cursor: "pointer",
-            }}
-          >
-            เข้าสู่ระบบ
-          </button>
-
-          <div
-            style={{
-              marginTop: 20,
-              background: "#F0FDF4",
-              padding: 14,
-              borderRadius: 14,
-              fontSize: 13,
-              color: "#166534",
-            }}
-          >
-            <div>
-              <b>Pharmacist</b>
-            </div>
-            user: pharm / pass: 1234
-
-            <div style={{ marginTop: 10 }}>
-              <b>Nurse</b>
-            </div>
-            user: nurse / pass: 1234
-          </div>
-        </form>
+      <div>
+        <DrugReturnNotification user={user} onLogout={handleLogout} />
       </div>
     );
   }
 
   return (
-    <div>
-      <div
-        style={{
-          position: "fixed",
-          top: 20,
-          right: 20,
-          zIndex: 999,
-        }}
-      >
-        <button
-          onClick={handleLogout}
-          style={{
-            padding: "12px 18px",
-            border: "none",
-            borderRadius: 14,
-            background: "#DC2626",
-            color: "#fff",
-            fontWeight: 700,
-            cursor: "pointer",
-            boxShadow:
-              "0 10px 25px rgba(220,38,38,0.3)",
-          }}
-        >
-          Logout
-        </button>
-      </div>
+    <div style={{
+      minHeight: "100vh",
+      display: "flex", justifyContent: "center", alignItems: "center",
+      background: "linear-gradient(135deg,#064E3B 0%,#065F46 50%,#14532D 100%)",
+      fontFamily: "'Sarabun', sans-serif", padding: 24,
+    }}>
+      <link href="https://fonts.googleapis.com/css2?family=Sarabun:wght@400;500;600;700&display=swap" rel="stylesheet" />
 
-      <DrugReturnNotification user={user} />
+      <div style={{ width: "100%", maxWidth: 420, display: "flex", flexDirection: "column", alignItems: "center" }}>
+        <div style={{ color: "#fff", fontWeight: 700, fontSize: 28, marginBottom: 4 }}>Nakornthon Pharmacy</div>
+        <div style={{ color: "#6EE7B7", fontSize: 14, marginBottom: 36 }}>Workflow Dashboard</div>
+
+        {/* ── STEP 1: Login ── */}
+        {step === "login" && (
+          <div style={{ width: "100%", maxWidth: 380 }}>
+            <div style={{ color: "#A7F3D0", fontSize: 14, marginBottom: 24, textAlign: "center" }}>เข้าสู่ระบบ</div>
+            <input
+              placeholder="Username"
+              value={username}
+              onChange={(e) => { setUsername(e.target.value); setLoginError(""); }}
+              onKeyDown={(e) => e.key === "Enter" && handleLogin()}
+              style={{
+                ...inputStyle,
+                background: "rgba(255,255,255,0.1)", color: "#fff",
+                border: "1.5px solid rgba(255,255,255,0.2)",
+              }}
+              autoFocus
+            />
+            <input
+              type="password"
+              placeholder="Password"
+              value={password}
+              onChange={(e) => { setPassword(e.target.value); setLoginError(""); }}
+              onKeyDown={(e) => e.key === "Enter" && handleLogin()}
+              style={{
+                ...inputStyle,
+                background: "rgba(255,255,255,0.1)", color: "#fff",
+                border: "1.5px solid rgba(255,255,255,0.2)",
+              }}
+            />
+            {loginError && (
+              <div style={{ color: "#FCA5A5", fontSize: 13, marginBottom: 14, textAlign: "center" }}>{loginError}</div>
+            )}
+            <button
+              onClick={handleLogin}
+              disabled={!username.trim() || !password.trim()}
+              style={{
+                width: "100%", padding: "14px 0", borderRadius: 14, border: "none",
+                background: username.trim() && password.trim()
+                  ? "linear-gradient(90deg,#15803D,#22C55E)"
+                  : "rgba(255,255,255,0.15)",
+                color: "#fff", fontWeight: 700, fontSize: 16,
+                cursor: username.trim() && password.trim() ? "pointer" : "not-allowed",
+                fontFamily: "'Sarabun', sans-serif",
+              }}
+            >เข้าสู่ระบบ →</button>
+            <div style={{
+              marginTop: 20, background: "rgba(255,255,255,0.08)", padding: 14,
+              borderRadius: 14, fontSize: 13, color: "#6EE7B7", textAlign: "center",
+            }}>
+              nurse / 1234 &nbsp;·&nbsp; pharm / 1234
+            </div>
+          </div>
+        )}
+
+        {/* ── STEP 2: เลือก Ward (พยาบาล) ── */}
+        {step === "ward" && (
+          <div style={{ width: "100%", maxWidth: 420 }}>
+            <div style={{ color: "#A7F3D0", fontSize: 14, marginBottom: 6, textAlign: "center", fontWeight: 700 }}>เลือก Ward</div>
+            <div style={{ color: "#6EE7B7", fontSize: 13, marginBottom: 20, textAlign: "center" }}>กรุณาเลือก Ward ของคุณ</div>
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 10 }}>
+              {WARD_LIST.map((ward) => (
+                <button key={ward} onClick={() => handleWardSelect(ward)} style={{
+                  padding: "16px 8px", borderRadius: 14,
+                  border: "1.5px solid rgba(255,255,255,0.2)",
+                  background: "rgba(255,255,255,0.1)",
+                  color: "#fff", fontWeight: 700, fontSize: 15, cursor: "pointer",
+                  fontFamily: "'Sarabun', sans-serif",
+                }}>{ward}</button>
+              ))}
+            </div>
+            <div onClick={() => { setStep("login"); setDetectedRole(null); }}
+              style={{ color: "#6EE7B7", fontSize: 13, marginTop: 20, textAlign: "center", cursor: "pointer" }}>
+              ← กลับ
+            </div>
+          </div>
+        )}
+
+        {/* ── STEP 3: กรอกชื่อ + เลขบัตร ── */}
+        {step === "info" && (
+          <div style={{ width: "100%", maxWidth: 380 }}>
+            <div style={{ color: "#A7F3D0", fontSize: 14, marginBottom: 6, textAlign: "center", fontWeight: 700 }}>ยืนยันตัวตน</div>
+            <div style={{
+              background: "rgba(255,255,255,0.1)", borderRadius: 12, padding: "10px 16px",
+              marginBottom: 20, textAlign: "center", display: "flex", alignItems: "center",
+              justifyContent: "center", gap: 10,
+            }}>
+              <div style={{
+                width: 36, height: 36, borderRadius: "50%",
+                background: detectedRole === "pharmacist" ? "#065F46" : "#1D4ED8",
+                display: "flex", alignItems: "center", justifyContent: "center",
+                color: "#fff", fontWeight: 700, fontSize: 13, flexShrink: 0,
+              }}>{detectedRole === "pharmacist" ? "ภก" : "RN"}</div>
+              <div style={{ color: "#6EE7B7", fontSize: 14, fontWeight: 600 }}>
+                {detectedRole === "pharmacist" ? "เภสัชกร → ห้องยา" : `พยาบาล → Ward ${selectedWard}`}
+              </div>
+            </div>
+            <div style={{ color: "#6EE7B7", fontSize: 13, marginBottom: 20, textAlign: "center" }}>
+              กรุณากรอกชื่อ-นามสกุล และเลขบัตรประจำตัว
+            </div>
+            <input
+              placeholder="ชื่อ-นามสกุล"
+              value={inputName}
+              onChange={(e) => setInputName(e.target.value)}
+              style={{
+                ...inputStyle,
+                background: "rgba(255,255,255,0.1)", color: "#fff",
+                border: "1.5px solid rgba(255,255,255,0.2)",
+              }}
+              autoFocus
+            />
+            <input
+              placeholder="เลขบัตรประจำตัว"
+              value={inputEmpId}
+              onChange={(e) => setInputEmpId(e.target.value)}
+              onKeyDown={(e) => e.key === "Enter" && handleInfoSubmit()}
+              style={{
+                ...inputStyle,
+                background: "rgba(255,255,255,0.1)", color: "#fff",
+                border: "1.5px solid rgba(255,255,255,0.2)",
+              }}
+            />
+            <button
+              onClick={handleInfoSubmit}
+              disabled={!inputName.trim() || !inputEmpId.trim()}
+              style={{
+                width: "100%", padding: "14px 0", borderRadius: 14, border: "none",
+                background: inputName.trim() && inputEmpId.trim()
+                  ? "linear-gradient(90deg,#15803D,#22C55E)"
+                  : "rgba(255,255,255,0.15)",
+                color: "#fff", fontWeight: 700, fontSize: 16,
+                cursor: inputName.trim() && inputEmpId.trim() ? "pointer" : "not-allowed",
+                fontFamily: "'Sarabun', sans-serif",
+              }}
+            >เข้าสู่ระบบ →</button>
+            <div onClick={() => {
+              if (detectedRole === "nurse") setStep("ward");
+              else setStep("login");
+            }}
+              style={{ color: "#6EE7B7", fontSize: 13, marginTop: 16, textAlign: "center", cursor: "pointer" }}>
+              ← กลับ
+            </div>
+          </div>
+        )}
+      </div>
     </div>
   );
 }
