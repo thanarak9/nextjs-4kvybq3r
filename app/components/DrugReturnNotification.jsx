@@ -7,7 +7,6 @@ import {
   query, orderBy
 } from "firebase/firestore";
 
-// ─── CONSTANTS ────────────────────────────────────────────────
 const WARD_LIST = ["ICU", "CCU", "5", "6A", "6B", "7", "8", "9", "10", "12", "NSY"];
 const CREDENTIALS = [
   { username: "nurse", password: "1234", role: "nurse" },
@@ -19,12 +18,26 @@ const USERS = [
   { id: 3, name: "ภก.สมหมาย ใจดี", empId: "P001", role: "pharmacist", ward: null },
 ];
 
-// ─── HELPERS ──────────────────────────────────────────────────
 function getCurrentTime() {
   return new Date().toLocaleString("th-TH", {
     day: "2-digit", month: "2-digit", year: "numeric",
     hour: "2-digit", minute: "2-digit",
   });
+}
+
+function getCurrentDateISO() {
+  const now = new Date();
+  return now.toISOString().split("T")[0];
+}
+
+function thaiDateToISO(thaiStr) {
+  if (!thaiStr) return "";
+  try {
+    const [datePart, timePart] = thaiStr.split(" ");
+    const [day, month, year] = datePart.split("/");
+    const isoYear = parseInt(year) - 543;
+    return `${isoYear}-${month.padStart(2,"0")}-${day.padStart(2,"0")}`;
+  } catch { return ""; }
 }
 
 function getProgress(item) {
@@ -62,26 +75,176 @@ function getStuckHours(item) {
   } catch { return 0; }
 }
 
-// ─── CSS-IN-JS GLOBALS ────────────────────────────────────────
 const G = {
-  primary: "#065F46",
-  primaryLight: "#059669",
-  accent: "#10B981",
-  accentSoft: "#D1FAE5",
-  bg: "#F0FDF4",
-  card: "#FFFFFF",
-  border: "#E5E7EB",
-  text: "#111827",
-  textMuted: "#6B7280",
-  danger: "#EF4444",
-  warning: "#F59E0B",
-  info: "#3B82F6",
-  shadow: "0 4px 24px rgba(6,95,70,0.08)",
-  shadowHover: "0 8px 32px rgba(6,95,70,0.14)",
-  radius: 16,
-  radiusSm: 10,
-  radiusLg: 24,
+  primary: "#065F46", primaryLight: "#059669", accent: "#10B981", accentSoft: "#D1FAE5",
+  bg: "#F0FDF4", card: "#FFFFFF", border: "#E5E7EB", text: "#111827", textMuted: "#6B7280",
+  danger: "#EF4444", warning: "#F59E0B", info: "#3B82F6",
+  shadow: "0 4px 24px rgba(6,95,70,0.08)", shadowHover: "0 8px 32px rgba(6,95,70,0.14)",
+  radius: 16, radiusSm: 10, radiusLg: 24,
 };
+
+// ══════════════════════════════════════════════════════════════
+// REPORT MODAL
+// ══════════════════════════════════════════════════════════════
+function ReportModal({ data, onClose }) {
+  const [searchText, setSearchText] = useState("");
+  const [searchUser, setSearchUser] = useState("");
+  const [searchAction, setSearchAction] = useState("");
+  const [dateFrom, setDateFrom] = useState("");
+  const [dateTo, setDateTo] = useState("");
+
+  // Flatten all audit logs from all patients
+  const allLogs = [];
+  data.forEach(item => {
+    (item.auditLog || []).forEach(log => {
+      allLogs.push({
+        ...log,
+        patientName: item.patientName,
+        hn: item.hn,
+        ward: item.ward,
+        room: item.room,
+      });
+    });
+  });
+
+  // Sort by time descending
+  allLogs.sort((a, b) => {
+    const toDate = str => {
+      try {
+        const [datePart, timePart] = str.split(" ");
+        const [day, month, year] = datePart.split("/");
+        const [hour, min] = timePart.split(":");
+        return new Date(parseInt(year) - 543, parseInt(month) - 1, parseInt(day), parseInt(hour), parseInt(min));
+      } catch { return new Date(0); }
+    };
+    return toDate(b.time) - toDate(a.time);
+  });
+
+  const filtered = allLogs.filter(log => {
+    const q = searchText.toLowerCase();
+    const matchText = !q || log.patientName?.toLowerCase().includes(q) || log.hn?.includes(q);
+    const matchUser = !searchUser || log.user?.toLowerCase().includes(searchUser.toLowerCase());
+    const matchAction = !searchAction || log.action?.toLowerCase().includes(searchAction.toLowerCase());
+    const logDate = thaiDateToISO(log.time);
+    const matchFrom = !dateFrom || logDate >= dateFrom;
+    const matchTo = !dateTo || logDate <= dateTo;
+    return matchText && matchUser && matchAction && matchFrom && matchTo;
+  });
+
+  function exportCSV() {
+    const headers = ["วันที่-เวลา", "ชื่อผู้ป่วย", "HN", "Ward", "ห้อง", "ผู้ทำรายการ", "Action"];
+    const rows = filtered.map(log => [
+      log.time, log.patientName, log.hn, log.ward, log.room, log.user, log.action
+    ].map(v => `"${v || ""}"`).join(","));
+    const csv = [headers.join(","), ...rows].join("\n");
+    const blob = new Blob(["\uFEFF" + csv], { type: "text/csv;charset=utf-8;" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `log_report_${new Date().toLocaleDateString("th-TH").replace(/\//g, "-")}.csv`;
+    a.click();
+    URL.revokeObjectURL(url);
+  }
+
+  function exportPrint() {
+    const rows = filtered.map((log, i) => `
+      <tr style="background:${i % 2 === 0 ? "#f9fafb" : "#fff"}">
+        <td style="padding:8px 12px;font-size:12px;color:#6b7280">${log.time}</td>
+        <td style="padding:8px 12px;font-weight:600">${log.patientName}</td>
+        <td style="padding:8px 12px;color:#6b7280">${log.hn}</td>
+        <td style="padding:8px 12px">${log.ward}</td>
+        <td style="padding:8px 12px;color:#059669;font-weight:600">${log.user}</td>
+        <td style="padding:8px 12px">${log.action}</td>
+      </tr>
+    `).join("");
+    const html = `<!DOCTYPE html><html><head><meta charset="UTF-8"><title>Log Report</title>
+    <link href="https://fonts.googleapis.com/css2?family=Sarabun:wght@400;600;700&display=swap" rel="stylesheet">
+    <style>body{font-family:'Sarabun',sans-serif;margin:0;padding:24px;color:#111827}h1{color:#065F46}table{width:100%;border-collapse:collapse;margin-top:16px}th{background:#065F46;color:#fff;padding:10px 12px;text-align:left;font-size:12px}@media print{body{padding:0}}</style>
+    </head><body>
+    <h1>📋 Log Report — Nakornthon Pharmacy</h1>
+    <div style="color:#6b7280;font-size:13px;margin-bottom:8px">พิมพ์เมื่อ: ${getCurrentTime()} · รายการ: ${filtered.length}</div>
+    <table><thead><tr><th>วันที่-เวลา</th><th>ชื่อผู้ป่วย</th><th>HN</th><th>Ward</th><th>ผู้ทำรายการ</th><th>Action</th></tr></thead>
+    <tbody>${rows}</tbody></table>
+    <script>window.onload=()=>window.print()<\/script></body></html>`;
+    const w = window.open("", "_blank");
+    w.document.write(html);
+    w.document.close();
+  }
+
+  const inp = { padding: "9px 12px", borderRadius: 8, border: `1.5px solid ${G.border}`, fontFamily: "'Sarabun',sans-serif", fontSize: 13, outline: "none", background: "#fff" };
+
+  return (
+    <div onClick={onClose} style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.55)", display: "flex", justifyContent: "center", alignItems: "center", padding: 16, zIndex: 1000, backdropFilter: "blur(4px)" }}>
+      <div onClick={e => e.stopPropagation()} style={{ background: G.bg, width: "100%", maxWidth: 900, borderRadius: G.radiusLg, padding: 24, maxHeight: "92vh", overflow: "auto", boxShadow: "0 32px 80px rgba(0,0,0,0.25)" }}>
+
+        {/* Header */}
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 20 }}>
+          <div>
+            <div style={{ fontSize: 20, fontWeight: 800, color: G.primary }}>📋 Log Report</div>
+            <div style={{ fontSize: 13, color: G.textMuted, marginTop: 2 }}>ประวัติการทำรายการทั้งหมด · {filtered.length} รายการ</div>
+          </div>
+          <button onClick={onClose} style={{ width: 34, height: 34, borderRadius: "50%", border: "none", background: "#F1F5F9", cursor: "pointer", fontSize: 16 }}>✕</button>
+        </div>
+
+        {/* Filters */}
+        <div style={{ background: G.card, borderRadius: G.radius, padding: 16, marginBottom: 16, boxShadow: G.shadow }}>
+          <div style={{ fontWeight: 700, fontSize: 13, color: G.primary, marginBottom: 12 }}>🔍 ค้นหา / กรอง</div>
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(180px,1fr))", gap: 10 }}>
+            <input placeholder="ชื่อผู้ป่วย / HN" value={searchText} onChange={e => setSearchText(e.target.value)} style={inp} />
+            <input placeholder="ชื่อ User ที่ทำ" value={searchUser} onChange={e => setSearchUser(e.target.value)} style={inp} />
+            <input placeholder="ประเภท Action" value={searchAction} onChange={e => setSearchAction(e.target.value)} style={inp} />
+            <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
+              <input type="date" value={dateFrom} onChange={e => setDateFrom(e.target.value)} style={{ ...inp, flex: 1 }} />
+              <span style={{ color: G.textMuted, fontSize: 12 }}>ถึง</span>
+              <input type="date" value={dateTo} onChange={e => setDateTo(e.target.value)} style={{ ...inp, flex: 1 }} />
+            </div>
+          </div>
+          {(searchText || searchUser || searchAction || dateFrom || dateTo) && (
+            <button onClick={() => { setSearchText(""); setSearchUser(""); setSearchAction(""); setDateFrom(""); setDateTo(""); }}
+              style={{ marginTop: 10, padding: "6px 14px", borderRadius: 8, border: `1px solid ${G.border}`, background: "transparent", color: G.textMuted, fontFamily: "'Sarabun',sans-serif", fontSize: 12, cursor: "pointer" }}>
+              ✕ ล้างตัวกรอง
+            </button>
+          )}
+        </div>
+
+        {/* Export buttons */}
+        <div style={{ display: "flex", gap: 10, marginBottom: 16, flexWrap: "wrap" }}>
+          <button onClick={exportCSV} style={{ padding: "9px 16px", borderRadius: G.radiusSm, border: `1.5px solid ${G.primary}`, background: "transparent", color: G.primary, fontWeight: 700, cursor: "pointer", fontFamily: "'Sarabun',sans-serif", fontSize: 13 }}>
+            📥 Export CSV
+          </button>
+          <button onClick={exportPrint} style={{ padding: "9px 16px", borderRadius: G.radiusSm, border: `1.5px solid ${G.info}`, background: "transparent", color: G.info, fontWeight: 700, cursor: "pointer", fontFamily: "'Sarabun',sans-serif", fontSize: 13 }}>
+            🖨️ พิมพ์รายงาน
+          </button>
+        </div>
+
+        {/* Log Table */}
+        {filtered.length === 0 ? (
+          <div style={{ textAlign: "center", padding: 40, color: G.textMuted }}>ไม่พบรายการที่ค้นหา</div>
+        ) : (
+          <div style={{ background: G.card, borderRadius: G.radius, overflow: "hidden", boxShadow: G.shadow }}>
+            {/* Table header */}
+            <div style={{ display: "grid", gridTemplateColumns: "160px 1fr 80px 60px 1fr 1fr", gap: 0, background: G.primary, padding: "10px 16px" }}>
+              {["วันที่-เวลา", "ชื่อผู้ป่วย", "HN", "Ward", "ผู้ทำรายการ", "Action"].map((h, i) => (
+                <div key={i} style={{ fontSize: 12, fontWeight: 700, color: "#fff" }}>{h}</div>
+              ))}
+            </div>
+            {/* Rows */}
+            {filtered.map((log, i) => (
+              <div key={i} style={{ display: "grid", gridTemplateColumns: "160px 1fr 80px 60px 1fr 1fr", gap: 0, padding: "10px 16px", background: i % 2 === 0 ? "#F8FAFC" : "#fff", borderBottom: `1px solid ${G.border}` }}>
+                <div style={{ fontSize: 12, color: G.textMuted }}>{log.time}</div>
+                <div style={{ fontSize: 13, fontWeight: 600, color: G.text }}>{log.patientName}</div>
+                <div style={{ fontSize: 12, color: G.textMuted }}>{log.hn}</div>
+                <div style={{ fontSize: 12, color: G.text }}>{log.ward}</div>
+                <div style={{ fontSize: 12, color: G.primaryLight, fontWeight: 600 }}>{log.user}</div>
+                <div style={{ fontSize: 12, color: log.action?.startsWith("✓") ? G.primaryLight : log.action?.startsWith("✗") ? G.danger : G.text }}>{log.action}</div>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
 
 // ══════════════════════════════════════════════════════════════
 // EXPORT UTILS
@@ -91,11 +254,7 @@ function exportToCSV(data) {
   const rows = data.map(item => {
     const status = getStatus(item);
     const progress = getProgress(item);
-    return [
-      item.patientName, item.hn, item.ward, item.room,
-      status.label, progress,
-      item.createdAt, item.updatedAt, item.updatedBy
-    ].map(v => `"${v}"`).join(",");
+    return [item.patientName, item.hn, item.ward, item.room, status.label, progress, item.createdAt, item.updatedAt, item.updatedBy].map(v => `"${v}"`).join(",");
   });
   const csv = [headers.join(","), ...rows].join("\n");
   const blob = new Blob(["\uFEFF" + csv], { type: "text/csv;charset=utf-8;" });
@@ -112,57 +271,35 @@ function exportToPrint(data) {
     const status = getStatus(item);
     const progress = getProgress(item);
     const stuck = getStuckHours(item);
-    return `
-      <tr style="border-bottom:1px solid #e5e7eb">
-        <td style="padding:10px 12px;font-weight:600">${item.patientName}</td>
-        <td style="padding:10px 12px;color:#6b7280">${item.hn}</td>
-        <td style="padding:10px 12px">${item.ward}</td>
-        <td style="padding:10px 12px">${item.room}</td>
-        <td style="padding:10px 12px">
-          <span style="background:${status.bg};color:${status.color};padding:3px 10px;border-radius:99px;font-size:12px;font-weight:700">${status.label}</span>
-        </td>
-        <td style="padding:10px 12px;font-weight:700;color:${progress===100?"#059669":progress>50?"#d97706":"#3b82f6"}">${progress}%</td>
-        <td style="padding:10px 12px;color:${stuck>2?"#ef4444":"#6b7280"}">${stuck > 0 ? stuck + " ชม." : "-"}</td>
-        <td style="padding:10px 12px;color:#6b7280;font-size:12px">${item.createdAt}</td>
-      </tr>
-    `;
+    return `<tr style="border-bottom:1px solid #e5e7eb">
+      <td style="padding:10px 12px;font-weight:600">${item.patientName}</td>
+      <td style="padding:10px 12px;color:#6b7280">${item.hn}</td>
+      <td style="padding:10px 12px">${item.ward}</td>
+      <td style="padding:10px 12px">${item.room}</td>
+      <td style="padding:10px 12px"><span style="background:${status.bg};color:${status.color};padding:3px 10px;border-radius:99px;font-size:12px;font-weight:700">${status.label}</span></td>
+      <td style="padding:10px 12px;font-weight:700;color:${progress===100?"#059669":progress>50?"#d97706":"#3b82f6"}">${progress}%</td>
+      <td style="padding:10px 12px;color:${stuck>2?"#ef4444":"#6b7280"}">${stuck > 0 ? stuck + " ชม." : "-"}</td>
+      <td style="padding:10px 12px;color:#6b7280;font-size:12px">${item.createdAt}</td>
+    </tr>`;
   }).join("");
-
-  const html = `
-    <!DOCTYPE html><html><head>
-    <meta charset="UTF-8">
-    <title>Pharmacy Report</title>
-    <style>
-      body { font-family: 'Sarabun', sans-serif; margin: 0; padding: 24px; color: #111827; }
-      h1 { color: #065F46; margin-bottom: 4px; }
-      table { width: 100%; border-collapse: collapse; margin-top: 20px; }
-      th { background: #065F46; color: white; padding: 10px 12px; text-align: left; font-size: 13px; }
-      tr:nth-child(even) { background: #f9fafb; }
-      @media print { body { padding: 0; } }
-    </style>
-    <link href="https://fonts.googleapis.com/css2?family=Sarabun:wght@400;600;700&display=swap" rel="stylesheet">
-    </head><body>
-    <h1>🏥 Nakornthon Pharmacy Report</h1>
-    <div style="color:#6b7280;font-size:13px">พิมพ์เมื่อ: ${getCurrentTime()} · รายการทั้งหมด: ${data.length}</div>
-    <table>
-      <thead><tr>
-        <th>ชื่อผู้ป่วย</th><th>HN</th><th>Ward</th><th>ห้อง</th>
-        <th>สถานะ</th><th>ความคืบหน้า</th><th>ค้างมา</th><th>สร้างเมื่อ</th>
-      </tr></thead>
-      <tbody>${rows}</tbody>
-    </table>
-    <script>window.onload=()=>window.print()<\/script>
-    </body></html>
-  `;
+  const html = `<!DOCTYPE html><html><head><meta charset="UTF-8"><title>Pharmacy Report</title>
+  <style>body{font-family:'Sarabun',sans-serif;margin:0;padding:24px;color:#111827}h1{color:#065F46;margin-bottom:4px}table{width:100%;border-collapse:collapse;margin-top:20px}th{background:#065F46;color:white;padding:10px 12px;text-align:left;font-size:13px}tr:nth-child(even){background:#f9fafb}@media print{body{padding:0}}</style>
+  <link href="https://fonts.googleapis.com/css2?family=Sarabun:wght@400;600;700&display=swap" rel="stylesheet">
+  </head><body>
+  <h1>🏥 Nakornthon Pharmacy Report</h1>
+  <div style="color:#6b7280;font-size:13px">พิมพ์เมื่อ: ${getCurrentTime()} · รายการทั้งหมด: ${data.length}</div>
+  <table><thead><tr><th>ชื่อผู้ป่วย</th><th>HN</th><th>Ward</th><th>ห้อง</th><th>สถานะ</th><th>ความคืบหน้า</th><th>ค้างมา</th><th>สร้างเมื่อ</th></tr></thead>
+  <tbody>${rows}</tbody></table>
+  <script>window.onload=()=>window.print()<\/script></body></html>`;
   const w = window.open("", "_blank");
   w.document.write(html);
   w.document.close();
 }
 
 // ══════════════════════════════════════════════════════════════
-// MINI CHART (SVG bar chart)
+// MINI CHART
 // ══════════════════════════════════════════════════════════════
-function MiniBarChart({ data, label, color }) {
+function MiniBarChart({ data, color }) {
   const max = Math.max(...data.map(d => d.value), 1);
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
@@ -170,13 +307,7 @@ function MiniBarChart({ data, label, color }) {
         <div key={i} style={{ display: "flex", alignItems: "center", gap: 8 }}>
           <div style={{ fontSize: 12, color: G.textMuted, minWidth: 60, textAlign: "right" }}>{d.label}</div>
           <div style={{ flex: 1, height: 20, background: "#F3F4F6", borderRadius: 99, overflow: "hidden" }}>
-            <div style={{
-              height: "100%", borderRadius: 99,
-              background: color,
-              width: `${(d.value / max) * 100}%`,
-              transition: "width 0.8s ease",
-              display: "flex", alignItems: "center", justifyContent: "flex-end", paddingRight: 6,
-            }}>
+            <div style={{ height: "100%", borderRadius: 99, background: color, width: `${(d.value / max) * 100}%`, transition: "width 0.8s ease", display: "flex", alignItems: "center", justifyContent: "flex-end", paddingRight: 6 }}>
               {d.value > 0 && <span style={{ fontSize: 10, color: "#fff", fontWeight: 700 }}>{d.value}</span>}
             </div>
           </div>
@@ -187,9 +318,9 @@ function MiniBarChart({ data, label, color }) {
 }
 
 // ══════════════════════════════════════════════════════════════
-// STAT DASHBOARD — upgraded with charts
+// STAT DASHBOARD
 // ══════════════════════════════════════════════════════════════
-function StatDashboard({ data, onExportCSV, onExportPrint }) {
+function StatDashboard({ data, onExportCSV, onExportPrint, onOpenReport }) {
   const total = data.length;
   const complete = data.filter(d => d.approveTakeHome && d.transport).length;
   const inProgress = data.filter(d => d.genDrug && !(d.approveTakeHome && d.transport)).length;
@@ -218,7 +349,6 @@ function StatDashboard({ data, onExportCSV, onExportPrint }) {
 
   return (
     <div style={{ marginBottom: 24 }}>
-      {/* Stat Cards */}
       <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(120px,1fr))", gap: 10, marginBottom: 16 }}>
         {cards.map((c, i) => (
           <div key={i} style={{ background: G.card, borderRadius: G.radius, padding: "14px 16px", boxShadow: G.shadow, borderTop: `3px solid ${c.color}` }}>
@@ -228,8 +358,6 @@ function StatDashboard({ data, onExportCSV, onExportPrint }) {
           </div>
         ))}
       </div>
-
-      {/* Charts Row */}
       <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12, marginBottom: 12 }}>
         <div style={{ background: G.card, borderRadius: G.radius, padding: "16px 18px", boxShadow: G.shadow }}>
           <div style={{ fontSize: 13, fontWeight: 700, color: G.primary, marginBottom: 12 }}>📊 รายการแยกตาม Ward</div>
@@ -240,23 +368,15 @@ function StatDashboard({ data, onExportCSV, onExportPrint }) {
           <MiniBarChart data={progressBuckets} color={G.info} />
         </div>
       </div>
-
-      {/* Export Buttons */}
       <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
-        <button onClick={onExportCSV} style={{ padding: "10px 18px", borderRadius: G.radiusSm, border: `1.5px solid ${G.primary}`, background: "transparent", color: G.primary, fontWeight: 700, cursor: "pointer", fontFamily: "'Sarabun',sans-serif", fontSize: 13, display: "flex", alignItems: "center", gap: 6 }}>
-          📥 Export CSV
-        </button>
-        <button onClick={onExportPrint} style={{ padding: "10px 18px", borderRadius: G.radiusSm, border: `1.5px solid ${G.info}`, background: "transparent", color: G.info, fontWeight: 700, cursor: "pointer", fontFamily: "'Sarabun',sans-serif", fontSize: 13, display: "flex", alignItems: "center", gap: 6 }}>
-          🖨️ พิมพ์รายงาน
-        </button>
+        <button onClick={onExportCSV} style={{ padding: "10px 18px", borderRadius: G.radiusSm, border: `1.5px solid ${G.primary}`, background: "transparent", color: G.primary, fontWeight: 700, cursor: "pointer", fontFamily: "'Sarabun',sans-serif", fontSize: 13 }}>📥 Export CSV</button>
+        <button onClick={onExportPrint} style={{ padding: "10px 18px", borderRadius: G.radiusSm, border: `1.5px solid ${G.info}`, background: "transparent", color: G.info, fontWeight: 700, cursor: "pointer", fontFamily: "'Sarabun',sans-serif", fontSize: 13 }}>🖨️ พิมพ์รายงาน</button>
+        <button onClick={onOpenReport} style={{ padding: "10px 18px", borderRadius: G.radiusSm, border: `1.5px solid ${G.warning}`, background: "transparent", color: G.warning, fontWeight: 700, cursor: "pointer", fontFamily: "'Sarabun',sans-serif", fontSize: 13 }}>📋 Log Report</button>
       </div>
     </div>
   );
 }
 
-// ══════════════════════════════════════════════════════════════
-// STUCK ALERT BANNER
-// ══════════════════════════════════════════════════════════════
 function StuckAlertBanner({ data }) {
   const stuckItems = data.filter(d => getStuckHours(d) >= 2 && !d.approveTakeHome);
   if (stuckItems.length === 0) return null;
@@ -277,9 +397,6 @@ function StuckAlertBanner({ data }) {
   );
 }
 
-// ══════════════════════════════════════════════════════════════
-// NOTIFICATION BELL
-// ══════════════════════════════════════════════════════════════
 function NotificationBell({ data }) {
   const [open, setOpen] = useState(false);
   const ref = useRef(null);
@@ -325,9 +442,6 @@ function NotificationBell({ data }) {
   );
 }
 
-// ══════════════════════════════════════════════════════════════
-// UI ATOMS
-// ══════════════════════════════════════════════════════════════
 function ProgressBar({ value }) {
   const color = value === 100 ? G.primaryLight : value > 50 ? G.warning : G.info;
   return (
@@ -365,13 +479,7 @@ function TaskButton({ active, text, onClick, time, disabled }) {
         boxShadow: active ? "0 4px 12px rgba(6,95,70,0.25)" : "none",
         transition: "all 0.2s",
       }}>
-        <span style={{
-          width: 24, height: 24, borderRadius: "50%", flexShrink: 0,
-          border: active ? "none" : `2px solid ${disabled ? "#E5E7EB" : "#D1D5DB"}`,
-          background: active ? "rgba(255,255,255,0.25)" : "transparent",
-          display: "flex", alignItems: "center", justifyContent: "center",
-          fontSize: 13, fontWeight: 900,
-        }}>{active ? "✓" : ""}</span>
+        <span style={{ width: 24, height: 24, borderRadius: "50%", flexShrink: 0, border: active ? "none" : `2px solid ${disabled ? "#E5E7EB" : "#D1D5DB"}`, background: active ? "rgba(255,255,255,0.25)" : "transparent", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 13, fontWeight: 900 }}>{active ? "✓" : ""}</span>
         {text}
       </button>
       {active && time && (
@@ -383,10 +491,7 @@ function TaskButton({ active, text, onClick, time, disabled }) {
 
 function Section({ title, children, locked, lockMsg }) {
   return (
-    <div style={{
-      background: locked ? "#FAFAFA" : G.card, padding: 16, borderRadius: G.radius, marginBottom: 10,
-      opacity: locked ? 0.55 : 1, border: locked ? `1.5px dashed ${G.border}` : `1px solid ${G.border}`,
-    }}>
+    <div style={{ background: locked ? "#FAFAFA" : G.card, padding: 16, borderRadius: G.radius, marginBottom: 10, opacity: locked ? 0.55 : 1, border: locked ? `1.5px dashed ${G.border}` : `1px solid ${G.border}` }}>
       <div style={{ fontWeight: 700, marginBottom: locked ? 6 : 12, color: locked ? G.textMuted : G.primary, fontSize: 13, display: "flex", alignItems: "center", gap: 6 }}>
         {locked ? "🔒" : "▸"} {title}
       </div>
@@ -411,9 +516,6 @@ function AuditLog({ log }) {
   );
 }
 
-// ══════════════════════════════════════════════════════════════
-// WORKFLOW DETAIL
-// ══════════════════════════════════════════════════════════════
 function WorkflowDetail({ selected, user, updateTask, updateField }) {
   const [newDrugText, setNewDrugText] = useState("");
   const genAnswered = selected.genDrug === true || selected._genAnswered || selected.genApprove === true || selected._approveAnswered;
@@ -482,8 +584,6 @@ function WorkflowDetail({ selected, user, updateTask, updateField }) {
         <TaskButton active={selected.keyOrder} text="Key Order" time={selected.keyOrderTime} onClick={() => updateTask("keyOrder", "Key Order")} />
         <TaskButton active={selected.prepareDrug} text="จัดยา" time={selected.prepareDrugTime} onClick={() => updateTask("prepareDrug", "จัดยา")} />
         <TaskButton active={selected.checkHM} text="Check HM" time={selected.checkHMTime} onClick={() => updateTask("checkHM", "Check HM")} />
-
-        {/* ยาที่รอ Key */}
         <div style={{ background: "#F8FAFC", borderRadius: G.radiusSm, padding: 12, border: `1px solid ${G.border}` }}>
           <div style={{ fontWeight: 700, fontSize: 13, color: G.text, marginBottom: 8, display: "flex", alignItems: "center", gap: 8 }}>
             ยาที่รอ Key
@@ -547,9 +647,6 @@ function WorkflowDetail({ selected, user, updateTask, updateField }) {
   );
 }
 
-// ══════════════════════════════════════════════════════════════
-// LOGIN
-// ══════════════════════════════════════════════════════════════
 function LoginScreen({ onLogin }) {
   const [step, setStep] = useState("login");
   const [username, setUsername] = useState("");
@@ -579,8 +676,6 @@ function LoginScreen({ onLogin }) {
   return (
     <div style={{ minHeight: "100vh", background: "linear-gradient(135deg,#022c22 0%,#064E3B 50%,#065F46 100%)", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", fontFamily: "'Sarabun',sans-serif", padding: 24 }}>
       <link href="https://fonts.googleapis.com/css2?family=Sarabun:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
-
-      {/* Logo */}
       <div style={{ width: 64, height: 64, borderRadius: "50%", background: "rgba(255,255,255,0.1)", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 30, marginBottom: 16, boxShadow: "0 8px 32px rgba(0,0,0,0.3)" }}>💊</div>
       <div style={{ color: "#fff", fontWeight: 800, fontSize: 26, marginBottom: 4, letterSpacing: "-0.5px" }}>Nakornthon Pharmacy</div>
       <div style={{ color: "#6EE7B7", fontSize: 13, marginBottom: 36 }}>Workflow Dashboard</div>
@@ -626,14 +721,12 @@ function LoginScreen({ onLogin }) {
   );
 }
 
-// ══════════════════════════════════════════════════════════════
-// MAIN DASHBOARD
-// ══════════════════════════════════════════════════════════════
 function MainDashboard({ user, onLogout }) {
   const [data, setData] = useState([]);
   const [loading, setLoading] = useState(true);
   const [selected, setSelected] = useState(null);
   const [showForm, setShowForm] = useState(false);
+  const [showReport, setShowReport] = useState(false);
   const [editingId, setEditingId] = useState(null);
   const [search, setSearch] = useState("");
   const [filterWard, setFilterWard] = useState("ทั้งหมด");
@@ -748,12 +841,14 @@ function MainDashboard({ user, onLogout }) {
             </div>
           </div>
           <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
-            {/* Live indicator */}
             <div style={{ display: "flex", alignItems: "center", gap: 5, background: "rgba(16,185,129,0.15)", border: "1px solid rgba(16,185,129,0.3)", borderRadius: 20, padding: "4px 10px" }}>
               <div style={{ width: 7, height: 7, borderRadius: "50%", background: "#10B981", boxShadow: "0 0 6px #10B981" }} />
               <span style={{ color: "#6EE7B7", fontSize: 11, fontWeight: 600 }}>Live</span>
             </div>
             <NotificationBell data={data} />
+            <button onClick={() => setShowReport(true)} style={{ background: "rgba(245,158,11,0.15)", border: "1px solid rgba(245,158,11,0.3)", borderRadius: 10, padding: "7px 12px", color: "#FCD34D", fontWeight: 600, cursor: "pointer", fontSize: 12, fontFamily: "'Sarabun',sans-serif" }}>
+              📋 Log Report
+            </button>
             <button onClick={() => setShowStats(s => !s)} style={{ background: "rgba(255,255,255,0.1)", border: "1px solid rgba(255,255,255,0.2)", borderRadius: 10, padding: "7px 12px", color: "#fff", fontWeight: 600, cursor: "pointer", fontSize: 12, fontFamily: "'Sarabun',sans-serif" }}>
               📊 {showStats ? "ซ่อน" : "สถิติ"}
             </button>
@@ -766,23 +861,19 @@ function MainDashboard({ user, onLogout }) {
       </div>
 
       <div style={{ maxWidth: 1100, margin: "0 auto", padding: "20px 16px" }}>
-
-        {/* STUCK ALERT */}
         <StuckAlertBanner data={user.role === "pharmacist" ? data : data.filter(d => d.ward === user.ward)} />
 
-        {/* STATS */}
         {showStats && (
           <StatDashboard
             data={user.role === "pharmacist" ? data : data.filter(d => d.ward === user.ward)}
             onExportCSV={() => exportToCSV(visibleData)}
             onExportPrint={() => exportToPrint(visibleData)}
+            onOpenReport={() => setShowReport(true)}
           />
         )}
 
-        {/* SEARCH & FILTER */}
         <div style={{ background: G.card, borderRadius: G.radius, padding: 14, marginBottom: 16, boxShadow: G.shadow, display: "flex", flexWrap: "wrap", gap: 10, alignItems: "center" }}>
-          <input placeholder="🔍 ค้นหาชื่อผู้ป่วย, HN, ห้อง..." value={search} onChange={e => setSearch(e.target.value)}
-            style={{ ...inp, marginBottom: 0, flex: "1 1 200px", fontSize: 14 }} />
+          <input placeholder="🔍 ค้นหาชื่อผู้ป่วย, HN, ห้อง..." value={search} onChange={e => setSearch(e.target.value)} style={{ ...inp, marginBottom: 0, flex: "1 1 200px", fontSize: 14 }} />
           {user.role === "pharmacist" && (
             <select value={filterWard} onChange={e => setFilterWard(e.target.value)} style={{ ...inp, marginBottom: 0, flex: "0 1 140px" }}>
               <option>ทั้งหมด</option>
@@ -799,7 +890,6 @@ function MainDashboard({ user, onLogout }) {
           <div style={{ fontSize: 12, color: G.textMuted, whiteSpace: "nowrap" }}>{visibleData.length} รายการ</div>
         </div>
 
-        {/* ADD BUTTON */}
         {user.role === "nurse" && (
           <div style={{ display: "flex", justifyContent: "flex-end", marginBottom: 14 }}>
             <button onClick={() => setShowForm(true)} style={{ padding: "11px 22px", border: "none", borderRadius: G.radius, background: `linear-gradient(135deg,${G.primary},${G.primaryLight})`, color: "#fff", fontWeight: 700, cursor: "pointer", fontFamily: "'Sarabun',sans-serif", fontSize: 14, boxShadow: "0 4px 16px rgba(6,95,70,0.3)", display: "flex", alignItems: "center", gap: 6 }}>
@@ -808,7 +898,6 @@ function MainDashboard({ user, onLogout }) {
           </div>
         )}
 
-        {/* CARD LIST */}
         {visibleData.length === 0 ? (
           <div style={{ textAlign: "center", padding: 60, color: G.textMuted, fontSize: 15 }}>
             {data.length === 0 ? "ยังไม่มีรายการ กดเพิ่มรายการเพื่อเริ่มต้น" : "ไม่พบรายการที่ค้นหา"}
@@ -833,7 +922,6 @@ function MainDashboard({ user, onLogout }) {
                         {isStuck && <div style={{ padding: "3px 10px", borderRadius: 99, fontSize: 11, fontWeight: 700, background: "#FEE2E2", color: G.danger }}>🚨 ค้าง {stuck} ชม.</div>}
                       </div>
                       <div style={{ color: G.textMuted, fontSize: 13, marginBottom: 6 }}>HN: {item.hn} · {item.ward} · ห้อง {item.room}</div>
-
                       {(item.pendingKeyDrugs || []).length > 0 && (
                         <div style={{ display: "flex", flexWrap: "wrap", gap: 4, marginBottom: 6 }}>
                           {(item.pendingKeyDrugs || []).map(drug => (
@@ -843,7 +931,6 @@ function MainDashboard({ user, onLogout }) {
                           ))}
                         </div>
                       )}
-
                       <div style={{ display: "flex", flexWrap: "wrap", gap: 5, marginBottom: 4 }}>
                         <StatusBadge active={item.returnDrug} text={item.returnDrug ? `Return (${item.returnType})` : "Return"} />
                         <StatusBadge active={item.doctorOrder} text="Doctor Order" />
@@ -865,6 +952,9 @@ function MainDashboard({ user, onLogout }) {
           </div>
         )}
       </div>
+
+      {/* REPORT MODAL */}
+      {showReport && <ReportModal data={data} onClose={() => setShowReport(false)} />}
 
       {/* DETAIL MODAL */}
       {selected && (
@@ -921,9 +1011,6 @@ function MainDashboard({ user, onLogout }) {
   );
 }
 
-// ══════════════════════════════════════════════════════════════
-// APP ROOT
-// ══════════════════════════════════════════════════════════════
 export default function DrugReturnNotification({ user, onLogout }) {
   if (!user) return null;
   return <MainDashboard user={user} onLogout={onLogout} />;
